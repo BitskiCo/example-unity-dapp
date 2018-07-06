@@ -28,7 +28,7 @@ public class BitskiBehavior : MonoBehaviour
         var nft = new NFT(accessToken);
         yield return nft.GetAccountBalance();
         showTokens(nft);
-        signInButton.enabled = false;
+        signInButton.gameObject.SetActive(false);
     }
 
     void showTokens(NFT nft) {
