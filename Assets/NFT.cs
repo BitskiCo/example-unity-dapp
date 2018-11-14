@@ -1,67 +1,120 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System;
+using System.Linq;
+using System.Numerics;
+using System.Collections;
 
 using Nethereum.ABI.FunctionEncoding.Attributes;
 using Nethereum.Contracts;
 
-using System.Numerics;
-
+using Bitski;
+using Bitski.Unity.Rpc;
+using Bitski.Auth;
 using UnityEngine;
-using Bitski.Rpc;
+using Nethereum.JsonRpc.Client;
 
 public class NFT
 {
-    public static string ABI = @"[{'constant':true,'inputs':[{'name':'_owner','type':'address'}],'name':'getOwnerTokens','outputs':[{'name':'_tokenIds','type':'uint256[]'}],'payable':false,'stateMutability':'view','type':'function'}]";
+    private string contractAddress;
+    private string networkName;
+    private AuthProvider authProvider;
+    private string defaultAccount;
+    public Exception Exeption;
+    public BigInteger Balance;
+    public BigInteger[] Tokens;
 
-    private static string contractAddress = "0x8c51dff8fcd48c292354ee751cceabeb25357df4";
-    private Contract contract;
-    private string accessToken;
-    private string[] accounts;
-    public TokensDTO tokens;
-
-    public NFT(string accessToken)
+    public NFT(AuthProvider authProvider, string contractAddress, string networkName)
     {
-        this.accessToken = accessToken;
-        this.contract = new Contract(null, ABI, contractAddress);
+        this.authProvider = authProvider;
+        this.contractAddress = contractAddress;
+        this.networkName = networkName;
     }
 
-    public IEnumerator GetAccountBalance()
-    {
-        yield return GetAccounts();
-        yield return GetBalance(accounts[0]);
-    }
+    public IEnumerator GetFirsAccountTokens() {
+        var accounts = new EthAccountsUnityRequest(authProvider, networkName);
+        yield return accounts.SendRequest();
 
-    public IEnumerator GetAccounts()
-    {
-        var getDataCallUnityRequest = new EthAccountsBitskiUnityRequest(accessToken);
-        yield return getDataCallUnityRequest.SendRequest();
-        accounts = getDataCallUnityRequest.Result;
+        if (accounts.Exception != null) {
+            Exeption = accounts.Exception;
+            yield break;
+        }
+
+        if (accounts.Result.Length < 1) {
+            Tokens = new BigInteger[0];
+            Balance = BigInteger.Zero;
+            yield break;
+        }
+
+        defaultAccount = accounts.Result.First();
+        yield return GetBalance(defaultAccount);
+
+        if (accounts.Exception != null) {
+            Exeption = accounts.Exception;
+            yield break;
+        }
+
+        Tokens = new BigInteger[(int)Balance];
+        for (BigInteger i = BigInteger.Zero; i < Balance; i++)
+        {
+            yield return GetToken(defaultAccount, i);
+        }
     }
 
     public IEnumerator GetBalance(string account)
     {
-        var getDataCallUnityRequest = new EthCallBitskiUnityRequest(accessToken);
-        var function = contract.GetFunction("getOwnerTokens");
-        var callInput = function.CreateCallInput(account);
-        callInput.From = account;
-        callInput.To = contract.Address;
+        var functionMessage = new BalanceOfFunctionMessage
+        {
+            Owner = account,
+        };
 
-        Debug.Log("callInput data is " + callInput.Data);
-        Debug.Log("callInput from is " + callInput.From);
-        Debug.Log("callInput to is " + callInput.To);
+        var request = new QueryUnityRequest<BalanceOfFunctionMessage, BalanceOfDTO>(defaultAccount, BitskiSDK.AuthProviderImpl, networkName);
+        yield return request.Query(functionMessage, contractAddress);
 
-        yield return getDataCallUnityRequest.SendRequest(callInput);
-        var result = getDataCallUnityRequest.Result;
-
-        tokens = new TokensDTO();
-        function.DecodeDTOTypeOutput<TokensDTO>(tokens, result);
+        Balance = request.Result.Balance;
     }
 
-    [FunctionOutput]
-    public class TokensDTO
-    {
-        [Parameter("uint256[]", "_tokenIds", 1)]
-        public List<BigInteger> tokenIDs { get; set; }
-    }
+    public IEnumerator GetToken(string account, BigInteger index) {
+        var functionMessage = new TokenOfOwnerByIndexFunctionMessage
+        {
+            Owner = account,
+            Index = index,
+        };
+        var request = new QueryUnityRequest<TokenOfOwnerByIndexFunctionMessage, TokenDTO>(defaultAccount, BitskiSDK.AuthProviderImpl, networkName);
+        yield return request.Query(functionMessage, contractAddress);
 
+        if (request.Exception == null) {
+            Tokens[(int)index] = request.Result.Token;
+        } else {
+            Exeption = request.Exception;
+        }
+    }
+}
+
+[Function("balanceOf", typeof(BalanceOfDTO))]
+public class BalanceOfFunctionMessage : FunctionMessage
+{
+    [Parameter("address", "owner", 1)]
+    public string Owner { get; set; }
+}
+
+[FunctionOutput]
+public class BalanceOfDTO: IFunctionOutputDTO {
+    [Parameter("uint256", "", 1)]
+    public BigInteger Balance { get; set; }
+}
+
+[Function("tokenOfOwnerByIndex", typeof(TokenDTO))]
+public class TokenOfOwnerByIndexFunctionMessage : FunctionMessage
+{
+    [Parameter("address", "owner", 1)]
+    public string Owner { get; set; }
+
+    [Parameter("uint256", "index", 2)]
+    public BigInteger Index { get; set; }
+}
+
+[FunctionOutput]
+public class TokenDTO : IFunctionOutputDTO
+{
+    [Parameter("uint256", "", 1)]
+    public BigInteger Token { get; set; }
 }

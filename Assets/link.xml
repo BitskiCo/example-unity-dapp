@@ -1,0 +1,11 @@
+<linker>
+  <assembly fullname="Nethereum.RPC">
+    <namespace fullname="Nethereum.RPC.Eth.DTOs" preserve="all"/>
+  </assembly>
+  <assembly fullname="Bitski.Unity.Rpc">
+    <namespace fullname="Bitski.Unity.RpcModel" preserve="all"/>
+  </assembly>
+  <assembly fullname="Nethereum.Hex">
+    <namespace fullname="Nethereum.Hex.HexTypes" preserve="all"/>
+  </assembly>
+</linker>
